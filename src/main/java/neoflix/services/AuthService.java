@@ -2,12 +2,19 @@ package neoflix.services;
 
 import neoflix.AppUtils;
 import neoflix.AuthUtils;
+
 import org.neo4j.driver.Driver;
+import org.neo4j.driver.Result;
+import org.neo4j.driver.Session;
+import org.neo4j.driver.Values;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import neoflix.ValidationException;
+import org.neo4j.driver.exceptions.ClientException;
+import org.neo4j.driver.exceptions.NoSuchRecordException;
 
 public class AuthService {
 
@@ -45,23 +52,38 @@ public class AuthService {
     // tag::register[]
     public Map<String,Object> register(String email, String plainPassword, String name) {
         var encrypted = AuthUtils.encryptPassword(plainPassword);
-        // tag::constraintError[]
-        // TODO: Handle Unique constraints in the database
-        var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
-        if (foundUser.isPresent()) {
-            throw new RuntimeException("An account already exists with the email address");
+        // Open a new Session
+        try (var session = this.driver.session()) {
+            // tag::create[]
+            var user = session.writeTransaction(tx -> {
+                String statement = """
+                              CREATE (u:User {
+                                  userId: randomUuid(),
+                                  email: $email,
+                                  password: $encrypted,
+                                  name: $name
+                            })
+                            RETURN u { .userId, .name, .email } as u""";
+                var res = tx.run(statement, Values.parameters("email", email, "encrypted", encrypted, "name", name));
+                // end::create[]
+                // tag::extract[]
+                // Extract safe properties from the user node (`u`) in the first row
+                return res.single().get("u").asMap();
+                // end::extract[]
+
+            });
+            String sub = (String)user.get("userId");
+            String token = AuthUtils.sign(sub,userToClaims(user), jwtSecret);
+
+            // tag::return-register[]
+            return userWithToken(user, token);
+            // end::return-register[]
         }
-        // end::constraintError[]
-
-        // TODO: Save user in database
-        var user = Map.<String,Object>of("email",email, "name",name,
-                "userId", String.valueOf(email.hashCode()), "password", encrypted);
-        users.add(user);
-
-        String sub = (String) user.get("userId");
-        String token = AuthUtils.sign(sub,userToClaims(user), jwtSecret);
-
-        return userWithToken(user, token);
+        catch (ClientException e) {
+            if (e.code().equals("Neo.ClientError.Schema.ConstraintValidationFailed")) {
+                throw new ValidationException("An account already exists with email address" + email, Map.of("email","Email address already taken"));
+            } throw e;
+        }
     }
     // end::register[]
 
@@ -88,41 +110,59 @@ public class AuthService {
     // tag::authenticate[]
     public Map<String,Object> authenticate(String email, String plainPassword) {
         // TODO: Authenticate the user from the database
-        var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
-        if (foundUser.isEmpty())
-            throw new RuntimeException("Cannot retrieve a single record, because this result is empty.");
-        var user = foundUser.get();
-        if (!plainPassword.equals(user.get("password")) && 
-            !AuthUtils.verifyPassword(plainPassword,(String)user.get("password"))) { // 
-            throw new RuntimeException("Incorrect password");
+
+//        var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
+//        if (foundUser.isEmpty())
+//            throw new RuntimeException("Cannot retrieve a single record, because this result is empty.");
+//        var user = foundUser.get();
+//        if (!plainPassword.equals(user.get("password")) &&
+//            !AuthUtils.verifyPassword(plainPassword,(String)user.get("password"))) { //
+//            throw new RuntimeException("Incorrect password");
+//        }
+        try (var session = driver.session()) {
+            var user = session.readTransaction(tx -> {
+                    String statement = "MATCH (u:User {email:$email}) RETURN u";
+                    var result = tx.run(statement, Values.parameters("email", email));
+                    return result.single().get("u").asMap();
+                }
+            );
+
+            if (!AuthUtils.verifyPassword(plainPassword, (String) user.get("password"))) {
+                throw new ValidationException("Incorrect password",Map.of("password","Incorrect password"));
+            }
+
+            // tag::return[]
+            String sub = (String) user.get("userId");
+            String token = AuthUtils.sign(sub, userToClaims(user), jwtSecret);
+            return userWithToken(user, token);
+            // end::return[]
+        }  catch (NoSuchRecordException e) {
+            throw new ValidationException("Incorrect email",Map.of("email","Incorrect email"));
         }
-        // tag::return[]
-        String sub = (String) user.get("userId");
-        String token = AuthUtils.sign(sub, userToClaims(user), jwtSecret);
-        return userWithToken(user, token);
-        // end::return[]
+
+
     }
     // end::authenticate[]
 
     private Map<String, Object> userToClaims(Map<String,Object> user) {
         return Map.of(
-                "sub", user.get("userId"),
-                "userId", user.get("userId"),
-                "name", user.get("name")
+            "sub", user.get("userId"),
+            "userId", user.get("userId"),
+            "name", user.get("name")
         );
     }
     private Map<String, Object> claimsToUser(Map<String,String> claims) {
         return Map.of(
-                "userId", claims.get("sub"),
-                "name", claims.get("name")
+            "userId", claims.get("sub"),
+            "name", claims.get("name")
         );
     }
     private Map<String, Object> userWithToken(Map<String,Object> user, String token) {
         return Map.of(
-                "token", token,
-                "userId", user.get("userId"),
-                "email", user.get("email"),
-                "name", user.get("name")
+            "token", token,
+            "userId", user.get("userId"),
+            "email", user.get("email"),
+            "name", user.get("name")
         );
     }
 }

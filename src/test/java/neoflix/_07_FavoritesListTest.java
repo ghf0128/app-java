@@ -46,7 +46,7 @@ class _07_FavoritesListTest {
             favoriteService.add("unknown", "x999");
             fail("Adding favorite with unknown userId or movieId should fail");
         } catch (Exception e) {
-            assertEquals("Couldn't create a favorite relationship for User unknown and Movie x999", e.getMessage());
+            assertEquals("Couldn't create a favorite relationship for user", e.getMessage());
         }
     }
 
@@ -54,9 +54,9 @@ class _07_FavoritesListTest {
     void removeFavorites() {
         if (driver != null)
             try (var session = driver.session()) {
-            session.writeTransaction(tx ->
+                session.writeTransaction(tx ->
                     tx.run("MATCH (u:User {userId: $userId})-[r:HAS_FAVORITE]->(m:Movie) DELETE r",
-                            Values.parameters("userId", userId)));
+                        Values.parameters("userId", userId)));
             }
     }
 
@@ -84,16 +84,36 @@ class _07_FavoritesListTest {
         assertEquals(goodfellas, add.get("tmdbId"));
         assertTrue((Boolean)add.get("favorite"), "goodfellas is favorite");
 
+        var addToyStory = favoriteService.add(userId, toyStory);
+        assertEquals(toyStory, addToyStory.get("tmdbId"));
+        assertTrue((Boolean)addToyStory.get("favorite"), "toyStory is favorite");
+
+
         var addCheck = favoriteService.all(userId, new Params(null, Params.Sort.title, Params.Order.DESC, 10, 0));
         var found = addCheck.stream().anyMatch(movie -> movie.get("tmdbId").equals(goodfellas));
         assertTrue(found, "goodfellas is a favorite");
+
+        var addCheck_toyStory = favoriteService.all(userId, new Params(null, Params.Sort.title, Params.Order.DESC, 10, 0));
+        var found_toyStory = addCheck_toyStory.stream().anyMatch(movie -> movie.get("tmdbId").equals(toyStory));
+        assertTrue(found_toyStory, "toyStory is a favorite");
 
         var remove = favoriteService.remove(userId, goodfellas);
         assertEquals(goodfellas, remove.get("tmdbId"));
         assertEquals(false, remove.get("favorite"), "goodfellas is not a favorite anymore");
 
+        var removeToyStory = favoriteService.remove(userId, toyStory);
+        assertEquals(toyStory, removeToyStory.get("tmdbId"));
+        assertEquals(false, removeToyStory.get("favorite"), "toyStory is not a favorite anymore");
+
+
         var removeCheck = favoriteService.all(userId, new Params(null, Params.Sort.title, Params.Order.DESC, 10, 0));
         var notFound = removeCheck.stream().anyMatch(movie -> movie.get("tmdbId").equals(goodfellas));
         assertFalse(notFound, "goodfellas is not a favorite anymore");
+
+
+        var removeCheckToyStory = favoriteService.all(userId, new Params(null, Params.Sort.title, Params.Order.DESC, 10, 0));
+        var notFoundToyStory = removeCheckToyStory.stream().anyMatch(movie -> movie.get("tmdbId").equals(toyStory));
+        assertFalse(notFoundToyStory, "toyStory is not a favorite anymore");
+
     }
 }

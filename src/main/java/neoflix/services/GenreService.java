@@ -5,6 +5,10 @@ import org.neo4j.driver.Driver;
 
 import java.util.List;
 import java.util.Map;
+import org.neo4j.driver.Result;
+import org.neo4j.driver.Session;
+import org.neo4j.driver.Value;
+import org.neo4j.driver.Values;
 
 public class GenreService {
     private final Driver driver;
@@ -38,7 +42,24 @@ public class GenreService {
         // TODO: Get a list of Genres from the database
         // TODO: Close the session
 
-        return genres;
+        try (var session = driver.session()) {
+            var query = """
+                    MATCH (g:Genre)
+                    WHERE g.name <> '(no genres listed)'
+                    CALL {
+                    WITH g
+                    MATCH (g)<-[:IN_GENRE]-(m:Movie)
+                    WHERE m.imdbRating IS NOT NULL AND m.poster IS NOT NULL
+                    RETURN m.poster as poster
+                    ORDER BY m.imdbRating DESC LIMIT 1}
+                    RETURN g {.*,
+                    movie: size((g)<-[:IN_GENRE]-(:Movie)),
+                    poster:poster}
+                    ORDER BY g.name ASC
+                    """;
+            var genres = session.readTransaction(tx-> tx.run(query).list(row -> row.get("genre").asMap()));
+            return genres;
+        }
     }
     // end::all[]
 
@@ -59,9 +80,9 @@ public class GenreService {
         // TODO: Close the session
 
         return genres.stream()
-                .filter(genre -> genre.get("name").equals(name))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Genre "+name+" not found"));
+            .filter(genre -> genre.get("name").equals(name))
+            .findFirst()
+            .orElseThrow(() -> new RuntimeException("Genre "+name+" not found"));
     }
     // end::find[]
 }

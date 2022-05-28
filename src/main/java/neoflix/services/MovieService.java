@@ -44,12 +44,39 @@ public class MovieService {
      */
     // tag::all[]
     public List<Map<String,Object>> all(Params params, String userId) {
-        // TODO: Open an Session
-        // TODO: Execute a query in a new Read Transaction
-        // TODO: Get a list of Movies from the Result
-        // TODO: Close the session
+        // Open a new session
+        try (var session = this.driver.session()) {
+            // tag::allcypher[]
+            // Execute a query in a new Read Transaction
+            var movies = session.readTransaction(tx -> {
+                // Retrieve a list of movies with the
+                // favorite flag appened to the movie's properties
 
-        return AppUtils.process(popular, params);
+                var favorites = getUserFavorites(tx, userId);
+
+                Params.Sort sort = params.sort(Params.Sort.title);
+                String query = String.format("""
+                    MATCH (m:Movie)
+                    WHERE m.`%s` IS NOT NULL
+                    RETURN m {
+                      .*
+                    ,favorite:m.tmdbId IN $favorites} AS movie
+                    ORDER BY m.`%s` %s
+                    SKIP $skip
+                    LIMIT $limit
+                    """, sort, sort, params.order());
+                var res= tx.run(query, Values.parameters( "skip", params.skip(), "limit", params.limit(),"favorites",favorites));
+                // tag::allmovies[]
+                // Get a list of Movies from the Result
+                return res.list(row -> row.get("movie").asMap());
+                // end::allmovies[]
+            });
+            // end::allcypher[]
+
+            // tag::return[]
+            return movies;
+            // end::return[]
+        }
     }
     // end::all[]
 
@@ -99,11 +126,11 @@ public class MovieService {
         // TODO: Get similar movies based on genres or ratings
 
         return AppUtils.process(popular, params).stream()
-                .map(item -> {
-                    Map<String,Object> copy = new HashMap<>(item);
-                    copy.put("score", ((int)(Math.random() * 10000)) / 100.0);
-                    return copy;
-                }).toList();
+            .map(item -> {
+                Map<String,Object> copy = new HashMap<>(item);
+                copy.put("score", ((int)(Math.random() * 10000)) / 100.0);
+                return copy;
+            }).toList();
     }
     // end::getSimilarMovies[]
 
@@ -197,9 +224,15 @@ public class MovieService {
      */
     // tag::getUserFavorites[]
     private List<String> getUserFavorites(Transaction tx, String userId) {
-        return List.of();
+
+        if (userId == null) return List.of();
+        var favoriteResult =  tx.run("""
+                MATCH (u:User {userId: $userId})-[:HAS_FAVORITE]->(m)
+                RETURN m.tmdbId AS id
+            """, Values.parameters("userId",userId));
+        // Extract the `id` value returned by the cypher query
+        return favoriteResult.list(row -> row.get("id").asString());
     }
     // end::getUserFavorites[]
 
-    record Movie() {} // todo
 }
