@@ -109,16 +109,8 @@ public class AuthService {
      */
     // tag::authenticate[]
     public Map<String,Object> authenticate(String email, String plainPassword) {
-        // TODO: Authenticate the user from the database
+        //  Authenticate the user from the database
 
-//        var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
-//        if (foundUser.isEmpty())
-//            throw new RuntimeException("Cannot retrieve a single record, because this result is empty.");
-//        var user = foundUser.get();
-//        if (!plainPassword.equals(user.get("password")) &&
-//            !AuthUtils.verifyPassword(plainPassword,(String)user.get("password"))) { //
-//            throw new RuntimeException("Incorrect password");
-//        }
         try (var session = driver.session()) {
             var user = session.readTransaction(tx -> {
                     String statement = "MATCH (u:User {email:$email}) RETURN u";

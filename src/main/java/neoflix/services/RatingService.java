@@ -47,7 +47,31 @@ public class RatingService {
     public List<Map<String, Object>> forMovie(String id, Params params) {
         // TODO: Get ratings for a Movie
 
-        return AppUtils.process(ratings, params);
+        try (var session = driver.session()) {
+
+            var movies = session.readTransaction(tx->{
+
+                var query = """
+                    MATCH (u:User)-[r:RATED]->(m:Movie {tmdbId: $id})
+                    RETURN r {
+                        .rating,
+                        .timestamp,
+                        user: u {
+                            .userId, .name
+                        }
+                    } AS review
+                    ORDER BY r.timestamp DESC
+                    SKIP $skip
+                    LIMIT $limit
+                    """;
+                var result = tx.run(query,
+                    Values.parameters("id", id, "skip", params.skip(), "limit", params.limit()))
+                    .list(row -> row.get("review").asMap());
+                return result;
+            });
+            return movies;
+        }
+
     }
     // end::forMovie[]
 

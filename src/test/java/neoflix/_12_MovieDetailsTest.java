@@ -15,7 +15,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class _12_MovieDetailsTest {
     private static Driver driver;
 
-    private static final String userId = "fe770c6b-4034-4e07-8e40-2f39e7a6722c";
+    private static final String userId = "9f965bf6-7e32-4afb-893f-756f502b2c2a";
+        //"fe770c6b-4034-4e07-8e40-2f39e7a6722c";
     private static final String email = "graphacademy.movielists@neo4j.com";
     private static final String lockStock = "100";
 

@@ -1,6 +1,7 @@
 package neoflix.services;
 
 import neoflix.AppUtils;
+import neoflix.ValidationException;
 import org.neo4j.driver.Driver;
 
 import java.util.List;
@@ -38,9 +39,6 @@ public class GenreService {
      */
     // tag::all[]
     public List<Map<String, Object>> all() {
-        // TODO: Open a new session
-        // TODO: Get a list of Genres from the database
-        // TODO: Close the session
 
         try (var session = driver.session()) {
             var query = """
@@ -54,7 +52,7 @@ public class GenreService {
                     ORDER BY m.imdbRating DESC LIMIT 1}
                     RETURN g {.*,
                     movie: size((g)<-[:IN_GENRE]-(:Movie)),
-                    poster:poster}
+                    poster:poster} as genre
                     ORDER BY g.name ASC
                     """;
             var genres = session.readTransaction(tx-> tx.run(query).list(row -> row.get("genre").asMap()));
@@ -74,15 +72,33 @@ public class GenreService {
      */
     // tag::find[]
     public Map<String,Object> find(String name) {
-        // TODO: Open a new session
-        // TODO: Get Genre information from the database
-        // TODO: Throw a 404 Error if the genre is not found
-        // TODO: Close the session
 
-        return genres.stream()
-            .filter(genre -> genre.get("name").equals(name))
-            .findFirst()
-            .orElseThrow(() -> new RuntimeException("Genre "+name+" not found"));
-    }
+
+        try (var session = driver.session()) {
+               var query = """
+                   MATCH (g:Genre {name: $name})<-[:IN_GENRE]-(m:Movie)
+                   WHERE m.imdbRating IS NOT NULL AND m.poster IS NOT NULL AND g.name <> '(no genres listed)'
+                   WITH g, m
+                   ORDER BY m.imdbRating DESC
+                                      
+                   WITH g, head(collect(m)) AS movie
+                                       
+                   RETURN g {
+                       .name,
+                       movies: size((g)<-[:IN_GENRE]-()),
+                       poster: movie.poster
+                   } AS genre
+                    """;
+            var genres = session
+                .readTransaction(tx -> tx.run(query,Values.parameters("name",name)).single().get("genre").asMap());
+            return genres;
+            }
+        }
+
+//        return genres.stream()
+//            .filter(genre -> genre.get("name").equals(name))
+//            .findFirst()
+//            .orElseThrow(() -> new RuntimeException("Genre "+name+" not found"));
+//    }
     // end::find[]
 }

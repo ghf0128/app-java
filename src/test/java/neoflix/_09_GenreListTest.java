@@ -37,7 +37,7 @@ class _09_GenreListTest {
         assertEquals("Action", output.get(0).get("name"));
         assertEquals("Western", output.get(18).get("name"));
 
-        output.sort(Comparator.comparing(m -> Integer.parseInt(m.get("movies").toString()), Comparator.nullsLast(Comparator.reverseOrder())));
+        output.sort(Comparator.comparing(m -> Integer.parseInt(m.get("movie").toString()), Comparator.nullsLast(Comparator.reverseOrder())));
 
         System.out.println("""
                 

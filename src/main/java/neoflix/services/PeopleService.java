@@ -4,6 +4,7 @@ import neoflix.AppUtils;
 import neoflix.AuthUtils;
 import neoflix.Params;
 import org.neo4j.driver.Driver;
+import org.neo4j.driver.Session;
 import org.neo4j.driver.Values;
 
 import java.util.Comparator;
@@ -38,14 +39,26 @@ public class PeopleService {
      */
     // tag::all[]
     public List<Map<String,Object>> all(Params params) {
-        // TODO: Get a list of people from the database
-        if (params.query() != null) {
-            return AppUtils.process(people.stream()
-                    .filter(p -> ((String)p.get("name"))
-                            .contains(params.query()))
-                    .toList(), params);
+        // Get a list of people from the database
+
+        try(var session = driver.session()){
+            var person = session.readTransaction(tx->{
+                var query = """
+                    MATCH (p:Person) 
+                    WHERE $q IS null OR p.name CONTAINS $q
+                    RETURN p {.*} as person
+                    ORDER BY p.name ASC
+                    SKIP $skip
+                    LIMIT $limit
+                    """;
+                var result = tx
+                    .run(query, Values.parameters("q",params.query(),"skip", params.skip(), "limit", params.limit()))
+                    .list(r -> r.get("person").asMap());
+                return result;
+            });
+            return person;
+
         }
-        return AppUtils.process(people, params);
     }
     // end::all[]
 
@@ -59,9 +72,26 @@ public class PeopleService {
      */
     // tag::findById[]
     public Map<String, Object> findById(String id) {
-        // TODO: Find a user by their ID
+        //  Find a user by their ID
+        try (var session = driver.session()) {
+             var users = session.readTransaction(tx-> {
 
-        return people.stream().filter(p -> id.equals(p.get("tmdbId"))).findAny().get();
+                 var query = """
+                    MATCH (p:Person {tmdbId: $id})
+                    RETURN p {
+                      .*,
+                      actedCount: size((p)-[:ACTED_IN]->()),
+                      directedCount: size((p)-[:DIRECTED]->())
+                    } AS person
+                     """;
+
+                var person = tx.run(query, Values.parameters("id", id)).single().get("person").asMap();
+                return person;
+            });
+             return users;
+        }
+
+
     }
     // end::findById[]
 
@@ -77,7 +107,27 @@ public class PeopleService {
     public List<Map<String,Object>> getSimilarPeople(String id, Params params) {
         // TODO: Get a list of similar people to the person by their id
 
-        return AppUtils.process(people, params);
+        try (var session = driver.session()) {
+
+            var person = session.readTransaction(tx->{
+                var result = tx.run(String.format("""
+                        MATCH (:Person {tmdbId: $id})-[:ACTED_IN|DIRECTED]->(m)<-[r:ACTED_IN|DIRECTED]-(p)
+                        RETURN p {
+                          .*,
+                          actedCount: size((p)-[:ACTED_IN]->()),
+                          directedCount: size((p)-[:DIRECTED]->()),
+                          inCommon: collect(m {.tmdbId, .title, type: type(r)})
+                        } AS person
+                        ORDER BY size(person.inCommon) DESC
+                        SKIP $skip
+                        LIMIT $limit
+                        """),
+                    Values.parameters("id", id, "skip", params.skip(), "limit", params.limit()))
+                    .list(r -> r.get("person").asMap());
+                return  result;
+            }); return  person;
+
+        }
     }
     // end::getSimilarPeople[]
 

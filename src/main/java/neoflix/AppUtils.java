@@ -42,8 +42,12 @@ public class AppUtils {
 
     // tag::initDriver[]
     static Driver initDriver() {
-        // TODO: Create and assign an instance of the driver here
-        return null;
+        // Create and assign an instance of the driver here
+//        return null;
+        var authToken = AuthTokens.basic(getNeo4jUsername(), getNeo4jPassword());
+        var driver = GraphDatabase.driver(getNeo4jUri(), authToken);
+        driver.verifyConnectivity();
+        return driver;
     }
     // end::initDriver[]
 
